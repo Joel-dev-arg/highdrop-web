@@ -1,39 +1,87 @@
+// REAL ONLY
+const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const CULTIVO_ID = Number(import.meta.env.VITE_CULTIVO_ID || 1);
+
+function timeAgo(d) {
+  const m = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (m <= 0) return "justo ahora";
+  if (m === 1) return "hace 1 min";
+  return `hace ${m} min`;
+}
+
+const RH = { min: 55, max: 70 };
+const TT = { min: 20, max: 26 };
+const PH = { min: 5.5, max: 6.2 };
+const estadoRango = (v, min, max, low, high, ok) =>
+  v < min ? low : v > max ? high : ok;
+
+/** Último estado para StatusPanel */
 export async function getTowerStatus() {
-  // simulación de API
-  await new Promise(r => setTimeout(r, 150));
+  const res = await fetch(`${API}/api/cultivos/${CULTIVO_ID}/detalles/latest`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const row = await res.json();
+
+  const humedad = Number(row?.humedad ?? NaN);
+  const temp    = Number(row?.temperatura_ambiente ?? NaN);
+  const ph      = Number(row?.nivel_pH ?? NaN);
+  const agua    = Number(row?.nivel_agua ?? NaN);
+  const luz     = Number(row?.nivel_luz ?? NaN);
+  const ts      = row?.creado_en ? new Date(row.creado_en) : new Date();
+
   return {
     conexionOk: true,
-    actualizadoHace: "hace 1 min",
-    humedad: { value: 62, rango: "55–70%", estado: "Óptimo" },
-    temperatura: { value: 23, rango: "20–26°C", estado: "Estable" },
-    nutrientes: { ec: 1.8, ph: 5.9, recomendado: "5.5–6.2", estado: "Balanceado" },
+    actualizadoHace: timeAgo(ts),
+
+    humedad:     { value: humedad, estado: estadoRango(humedad, RH.min, RH.max, "Baja", "Alta", "Óptimo") },
+    temperatura: { value: temp,    estado: estadoRango(temp, TT.min, TT.max, "Baja", "Alta", "Estable") },
+    nutrientes:  { ph,             estado: estadoRango(ph, PH.min, PH.max, "Bajo", "Alto", "Balanceado") },
+
+    agua: { porcentaje: agua, estado: agua <= 25 ? "Bajo" : "Suficiente", proximo: "2 días" },
+    luz:  { porcentaje: luz },
+
+    // placeholders hasta que tengas esto en DB
     crecimiento: { etapa: "Etapa vegetativa", semana: "Semana 3", progreso: 72 },
-    agua: { porcentaje: 88, estado: "Suficiente", proximo: "2 días" }
   };
 }
 
+/** Histórico de humedad: devuelve ASC con {ts: Date, humidity: number} */
 export async function getHumidityHistoryRaw({ minutes = 60 * 24 } = {}) {
-  const now = new Date();
-  const items = [];
-  for (let i = minutes - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 60 * 1000);
-    const base = 62 + 5 * Math.sin(i / 30);
-    const noise = (Math.random() - 0.5) * 2;
-    const val = Math.max(45, Math.min(80, Math.round(base + noise)));
-    items.push({ ts: d, humidity: val });
-  }
-  return items;
+  const limit = Math.max(1, Math.min(2000, minutes));
+  const res = await fetch(`${API}/api/cultivos/${CULTIVO_ID}/detalles?limit=${limit}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const rowsDesc = await res.json();
+  const rowsAsc = rowsDesc.slice().reverse(); // backend devuelve DESC
+
+  return rowsAsc.map(r => ({
+    ts: new Date(r.creado_en),
+    humidity: Number(r?.humedad ?? 0),
+  }));
 }
 
+/** Histórico de temperatura: devuelve ASC con {ts: Date, temperature: number} */
 export async function getTemperatureHistoryRaw({ minutes = 60 * 24 } = {}) {
-  const now = new Date();
-  const items = [];
-  for (let i = minutes - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 60 * 1000);
-    const base = 23 + 2.5 * Math.sin(i / 40);
-    const noise = (Math.random() - 0.5) * 0.8;
-    const val = Math.round(base + noise);
-    items.push({ ts: d, temperature: Math.max(16, Math.min(35, val)) });
-  }
-  return items;
+  const limit = Math.max(1, Math.min(2000, minutes));
+  const res = await fetch(`${API}/api/cultivos/${CULTIVO_ID}/detalles?limit=${limit}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const rowsDesc = await res.json();
+  const rowsAsc = rowsDesc.slice().reverse();
+
+  return rowsAsc.map(r => ({
+    ts: new Date(r.creado_en),
+    temperature: Number(r?.temperatura_ambiente ?? 0),
+  }));
+}
+
+/** Histórico de pH: devuelve ASC con {ts: Date, ph: number} */
+export async function getNutrientsHistoryRaw({ minutes = 60 * 24 } = {}) {
+  const limit = Math.max(1, Math.min(2000, minutes));
+  const res = await fetch(`${API}/api/cultivos/${CULTIVO_ID}/detalles?limit=${limit}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const rowsDesc = await res.json();
+  const rowsAsc = rowsDesc.slice().reverse();
+
+  return rowsAsc.map(r => ({
+    ts: new Date(r.creado_en),
+    ph: Number(r?.nivel_pH ?? 0),
+  }));
 }

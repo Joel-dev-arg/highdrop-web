@@ -1,4 +1,4 @@
-export default function Header({ onRefresh }) {
+export default function Header({ onRefresh, onOpenSettings }) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -12,14 +12,14 @@ export default function Header({ onRefresh }) {
           <div className="subtitle">Monitoreo en tiempo real de torre vertical</div>
         </div>
       </div>
+
       <div className="actions">
-        <button className="btn btn--ghost">Ajustes</button>
+        <button className="btn btn--ghost" onClick={onOpenSettings}>Ajustes</button>
         <button className="btn btn--primary" onClick={onRefresh}>
-          {/* refresh */}
-          <svg viewBox="0 0 24 24" width="16" height="16">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
             <path d="M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.76-4.24L14 10h6V4l-2.3 2.3Z" fill="currentColor"/>
           </svg>
-          Actualizar
+          <span style={{ marginLeft: 6 }}>Actualizar</span>
         </button>
       </div>
     </header>
