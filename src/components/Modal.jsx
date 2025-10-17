@@ -1,8 +1,34 @@
+import { useEffect } from "react";
+import { createPortal } from "react-dom";
+
 export default function Modal({ open, onClose, children, title }) {
   if (!open) return null;
-  return (
-    <div className="modal-overlay" role="dialog" aria-modal="true">
-      <div className="modal">
+
+  // Bloquea el scroll del body mientras el modal está abierto
+  useEffect(() => {
+    const { overflow } = document.body.style;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = overflow; };
+  }, []);
+
+  // Cerrar con ESC
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const overlay = (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose?.(); // solo overlay
+      }}
+      style={{ zIndex: 10000 }} // bien arriba de todo
+    >
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div className="modal-title">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
@@ -16,4 +42,7 @@ export default function Modal({ open, onClose, children, title }) {
       </div>
     </div>
   );
+
+  // 🔥 Renderiza el modal en <body>, fuera del árbol del panel
+  return createPortal(overlay, document.body);
 }
