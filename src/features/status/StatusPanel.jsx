@@ -1,11 +1,10 @@
+// src/features/status/StatusPanel.jsx
 import { useEffect, useState, useMemo } from "react";
 import useTowerStatus from "../../hooks/useTowerStatus";
 import useHumidityHistory from "../../hooks/useHumidityHistory";
 import useTemperatureHistory from "../../hooks/useTemperatureHistory";
 import useAlertSettings from "../../hooks/useAlertSettings";
 import MiniSparkline from "../../components/MiniSparkline";
-
-import Progress from "../../components/Progress";
 import Badge from "../../components/Badge";
 import Modal from "../../components/Modal";
 import HumidityHistory from "./HumidityHistory";
@@ -14,7 +13,8 @@ import NutrientsHistory from "./NutrientsHistory";
 import StarsRain from "../../components/StarsRain";
 import { DropIcon, ThermoIcon, BeakerIcon, LeafIcon, TankIcon } from "../../components/Icons";
 
-// estado → color
+// const { SunIcon } = ... // si tenés un ícono de sol propio
+
 const toneForEstado = (estado) => {
   if (["Óptimo", "Estable", "Balanceado", "Suficiente"].includes(estado)) return "ok";
   if (["Alta", "Alto"].includes(estado)) return "warn";
@@ -22,7 +22,15 @@ const toneForEstado = (estado) => {
   return "info";
 };
 
-// helpers de tiempo
+// Regla simple para luz
+const lightEstado = (pct) => {
+  const v = Number(pct);
+  if (!Number.isFinite(v)) return "—";
+  if (v < 30) return "Baja";
+  if (v > 70) return "Alta";
+  return "Suficiente";
+};
+
 const formatWeeksDays = (dias) => {
   const n = Number(dias);
   if (!Number.isFinite(n) || n < 0) return "0 días";
@@ -34,6 +42,7 @@ const formatWeeksDays = (dias) => {
   if (!t) t = "0 días";
   return t;
 };
+
 const diffDaysFromDate = (dateLike) => {
   if (!dateLike) return NaN;
   const d = new Date(dateLike);
@@ -42,12 +51,13 @@ const diffDaysFromDate = (dateLike) => {
   return Math.max(0, Math.floor((Date.now() - d.getTime()) / ONE));
 };
 
-export default function StatusPanel({ onReady }) {
-  // ======= HOOKS (siempre arriba y sin condiciones) =======
-  const { data, loading, reload } = useTowerStatus(60000);
+export default function StatusPanel({ onReady, selectedCultivoId }) {
+  const cultivoId = selectedCultivoId ?? 1;
 
-  const { data: humHist } = useHumidityHistory({ range: "24h", step: 15 });
-  const { data: tmpHist } = useTemperatureHistory({ range: "24h", step: 15 });
+  const { data, loading, reload } = useTowerStatus(60000, cultivoId);
+  const { data: humHist } = useHumidityHistory({ range: "24h", step: 15, cultivoId });
+  const { data: tmpHist } = useTemperatureHistory({ range: "24h", step: 15, cultivoId });
+
   const humPoints = humHist?.slice(-24).map(d => d.humidity ?? d?.humidity) ?? [];
   const tmpPoints = tmpHist?.slice(-24).map(d => d.temperature ?? d?.temperature) ?? [];
 
@@ -82,7 +92,6 @@ export default function StatusPanel({ onReady }) {
     },
   };
 
-  // ====== Crecimiento: calcular SIEMPRE (aunque data sea undefined) ======
   const diasSrv   = Number(data?.crecimiento?.dias);
   const tiempoSrv = data?.crecimiento?.tiempo;
   const fechaPlant =
@@ -104,7 +113,6 @@ export default function StatusPanel({ onReady }) {
     ? tiempoSrv
     : formatWeeksDays(crecDias);
 
-  // ======= A PARTIR DE ACÁ PODEMOS HACER RETURNS =======
   if (loading || !data) {
     return (
       <>
@@ -117,7 +125,7 @@ export default function StatusPanel({ onReady }) {
     );
   }
 
-  // ====== Alertas ======
+  // Alertas
   const alerts = [];
   const add = (msg) => alerts.push({ msg });
   if (ranges.humidity.enabled) {
@@ -142,44 +150,43 @@ export default function StatusPanel({ onReady }) {
     }
   }
 
+  const luzPct = Number(data?.luz?.porcentaje) || 0;
+  const luzEstado = lightEstado(luzPct);
+
   return (
     <>
-      <div className="panel-meta">
-  <div className="meta-title">Panel de Estado</div>
-  <div
-    className="meta-tags"
-    style={{ display: "flex", alignItems: "center", gap: 8 }}
-  >
-    {data.conexionOk ? (
-      <>
-        <Badge tone="ok">Conexión OK</Badge>
-        <span className="muted">•</span>
-        <span className="muted">Actualizado {data.actualizadoHace}</span>
-      </>
-    ) : (
-      <>
-        <Badge tone="danger">Sin conexión</Badge>
-        <span className="muted">
-          {data.errorMsg ?? "No se encuentra conectado el Arduino"}
-        </span>
-        <span className="muted">•</span>
-        <span className="muted">Últimos datos: {data.actualizadoHace}</span>
-      </>
-    )}
-  </div>
-</div>
-
-
-      {alerts.length > 0 && (
-        <div className="alertbar">
-          <span className="alertbar-dot" aria-hidden></span>
-          <div className="alertbar-text">
-            {alerts.map((a, i) => <span className="alertbar-item" key={i}>⚠️ {a.msg}</span>)}
+      <div className="status-grid">
+        {/* Encabezado - sin caja, full width */}
+        <div className="full-row meta-row">
+          <div className="meta-title">Panel de Estado</div>
+          <div className="meta-tags" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {data.conexionOk ? (
+              <>
+                <Badge tone="ok">Conexión OK</Badge>
+                <span className="muted">•</span>
+                <span className="muted">Actualizado {data.actualizadoHace}</span>
+              </>
+            ) : (
+              <>
+                <Badge tone="danger">Sin conexión</Badge>
+                <span className="muted">{data.errorMsg ?? "No se encuentra conectado el Arduino"}</span>
+                <span className="muted">•</span>
+                {/*<span className="muted">Últimos datos: {data.actualizadoHace}</span>*/}
+              </>
+            )}
           </div>
         </div>
-      )}
 
-      <div className="grid">
+        {/* Alertas - sin caja, full width */}
+        {alerts.length > 0 && (
+          <div className="alertbar full-row">
+            <span className="alertbar-dot" aria-hidden></span>
+            <div className="alertbar-text">
+              {alerts.map((a, i) => <span className="alertbar-item" key={i}>⚠️ {a.msg}</span>)}
+            </div>
+          </div>
+        )}
+
         {/* HUMEDAD */}
         <button
           className="card card--notch clickable"
@@ -250,8 +257,28 @@ export default function StatusPanel({ onReady }) {
           </div>
         </button>
 
+        {/* LUZ */}
+        <div className="card card--notch">
+          <div className="stat-head">
+            <div className="stat-title">
+              {/* <span className="icon"><SunIcon /></span> */}
+              <span className="icon">☀️</span>
+              <span>Luz</span>
+            </div>
+            <Badge tone={toneForEstado(luzEstado)}>{luzEstado}</Badge>
+          </div>
+          <div className="stat-body">
+            <div className="stat-value">{luzPct}%</div>
+            <div className="stat-helper">Intensidad actual</div>
+            <div className="progress">
+              <div className="progress-bar" style={{ width: `${Math.max(0, Math.min(100, luzPct))}%` }} />
+            </div>
+            <div className="progress-label"> </div>
+          </div>
+        </div>
+
         {/* CRECIMIENTO */}
-        <button className="card card--notch">
+        <div className="card card--notch">
           <div className="stat-head">
             <div className="stat-title">
               <span className="icon"><LeafIcon /></span>
@@ -266,10 +293,10 @@ export default function StatusPanel({ onReady }) {
               {fechaPlant ? <> • <span className="muted">{new Date(fechaPlant).toLocaleString()}</span></> : null}
             </div>
           </div>
-        </button>
+        </div>
 
-        {/* NIVEL DE AGUA (2 columnas) */}
-        <button className="card card--notch" style={{ gridColumn: "span 2" }}>
+        {/* NIVEL DE AGUA — AL LADO DE CRECIMIENTO */}
+        <div className="card card--notch">
           <div className="stat-head">
             <div className="stat-title">
               <span className="icon"><TankIcon /></span>
@@ -280,20 +307,23 @@ export default function StatusPanel({ onReady }) {
           <div className="stat-body">
             <div className="stat-value">{data.agua.porcentaje}%</div>
             <div className="stat-helper">Próximo relleno: {data.agua.proximo}</div>
-            <Progress value={data.agua.porcentaje} />
+            <div className="progress">
+              <div className="progress-bar" style={{ width: `${Number(data.agua.porcentaje) || 0}%` }} />
+            </div>
+            <div className="progress-label"> </div>
           </div>
-        </button>
+        </div>
       </div>
 
       {/* Modales */}
       <Modal open={openHumHistory} onClose={() => setOpenHumHistory(false)} title="Historial de Humedad">
-        <HumidityHistory />
+        <HumidityHistory cultivoId={cultivoId} />
       </Modal>
       <Modal open={openTempHistory} onClose={() => setOpenTempHistory(false)} title="Historial de Temperatura">
-        <TemperatureHistory />
+        <TemperatureHistory cultivoId={cultivoId} />
       </Modal>
       <Modal open={openNutrHistory} onClose={() => setOpenNutrHistory(false)} title="Historial de pH">
-        <NutrientsHistory />
+        <NutrientsHistory cultivoId={cultivoId} />
       </Modal>
 
       <StarsRain key={rainId} count={110} duration={2000} />

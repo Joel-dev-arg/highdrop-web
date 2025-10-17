@@ -1,6 +1,14 @@
 // src/features/cultivos/CultivosPanel.jsx
 import { useEffect, useState } from "react";
-import { listCultivos, createCultivo, updateCultivo, deleteCultivo } from "../../api/cultivos";
+import {
+  listCultivos,
+  createCultivo,
+  updateCultivo,
+  deleteCultivo,
+  // 👇 nuevos helpers para sincronizar con el backend/ingestor
+  getActiveCultivo,
+  setActiveCultivo,
+} from "../../api/cultivos";
 import Modal from "../../components/Modal";
 
 const TYPES = ["Lechuga", "Aromáticas"];
@@ -13,10 +21,34 @@ export default function CultivosPanel({ selectedId, onSelect, onChanged }) {
   const [error, setError] = useState("");
 
   const load = async () => {
-    try { setItems(await listCultivos()); }
-    catch (e) { setError(e.message); }
-  };
-  useEffect(() => { load(); }, []);
+  try {
+    const list = await listCultivos();
+    setItems(list);
+    // 👇 si no hay seleccionado aún, elegimos el primero
+    if (!selectedId && list.length) {
+      onSelect?.(list[0].id_cultivo);
+    }
+  } catch (e) {
+    setError(e.message);
+  }
+};
+
+  // Carga lista y, si no hay selección externa, sincroniza con /hardware/active-cultivo
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      await load();
+      try {
+        if (selectedId == null) {
+          const { id } = await getActiveCultivo();
+          if (alive && Number.isInteger(id)) onSelect?.(id);
+        }
+      } catch {
+        // si falla, no bloquea la UI
+      }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAdd = async (payload) => {
     await createCultivo(payload);
@@ -40,6 +72,18 @@ export default function CultivosPanel({ selectedId, onSelect, onChanged }) {
     if (selectedId === id) onSelect?.(null);
   };
 
+  // 👉 ahora al hacer click, además de seleccionar, avisamos al backend
+  const handleSelect = async (id) => {
+    // optimista: marcamos seleccionado ya
+    onSelect?.(id);
+    try {
+      await setActiveCultivo(id); // POST /api/hardware/active-cultivo
+    } catch (e) {
+      // si falla, lo avisamos pero mantenemos la selección para no “rebotar” la UI
+      setError(e.message || "No se pudo fijar el cultivo activo");
+    }
+  };
+
   return (
     <div className="card card--notch">
       <div className="toolbar">
@@ -54,7 +98,7 @@ export default function CultivosPanel({ selectedId, onSelect, onChanged }) {
           <div
             key={c.id_cultivo}
             className={`cultivo-item ${selectedId === c.id_cultivo ? "cultivo-item--active" : ""}`}
-            onClick={() => onSelect?.(c.id_cultivo)}
+            onClick={() => handleSelect(c.id_cultivo)}
           >
             <div className="cultivo-item__left">
               <span className="cultivo-dot" />
@@ -138,7 +182,7 @@ export default function CultivosPanel({ selectedId, onSelect, onChanged }) {
   );
 }
 
-/* ====== FORM – CREAR (como tu 2da captura) ====== */
+/* ====== FORM – CREAR ====== */
 function AgregarCultivoForm({ onCancel, onSubmit }) {
   const [nombre, setNombre] = useState("");
   const [tipo, setTipo] = useState(TYPES[0]);
@@ -146,7 +190,6 @@ function AgregarCultivoForm({ onCancel, onSubmit }) {
 
   return (
     <div className="form-modal">
-      {/* Sección: Nombre */}
       <div className="section section--soft">
         <div className="section-title">Nombre del cultivo</div>
         <input
@@ -157,7 +200,6 @@ function AgregarCultivoForm({ onCancel, onSubmit }) {
         />
       </div>
 
-      {/* Sección: Tipo */}
       <div className="section section--soft">
         <div className="section-title">Tipo</div>
         <div className="toggle">
@@ -174,13 +216,11 @@ function AgregarCultivoForm({ onCancel, onSubmit }) {
         </div>
       </div>
 
-      {/* Resumen */}
       <div className="section section--note">
         <div className="note-row">🪪&nbsp;&nbsp;Nombre: “{nombre || "Nuevo cultivo"}”</div>
         <div className="note-row">🧪&nbsp;&nbsp;Tipo: {tipo}</div>
       </div>
 
-      {/* Fecha opcional */}
       <div className="section">
         <div className="section-title muted">Fecha de plantación</div>
         <input
@@ -209,7 +249,7 @@ function AgregarCultivoForm({ onCancel, onSubmit }) {
   );
 }
 
-/* ====== FORM – EDITAR (como tu 1ra captura) ====== */
+/* ====== FORM – EDITAR ====== */
 function EditarCultivoForm({ initial, onCancel, onSubmit }) {
   const [nombre, setNombre] = useState(initial?.nombre || "");
   const [tipo, setTipo] = useState(initial?.tipo || TYPES[0]);
@@ -217,7 +257,6 @@ function EditarCultivoForm({ initial, onCancel, onSubmit }) {
 
   return (
     <div className="form-modal">
-      {/* Sección: Nombre */}
       <div className="section section--soft">
         <div className="section-title">Nombre del cultivo</div>
         <input
@@ -229,7 +268,6 @@ function EditarCultivoForm({ initial, onCancel, onSubmit }) {
         <div className="hint muted">Consejo: usa nombres cortos y descriptivos (p. ej., “Lechuga Roma 1”).</div>
       </div>
 
-      {/* Sección: Tipo */}
       <div className="section section--soft">
         <div className="section-title">Tipo</div>
         <div className="toggle">
@@ -247,13 +285,11 @@ function EditarCultivoForm({ initial, onCancel, onSubmit }) {
         <div className="hint muted">Solo puedes elegir uno. Podrás cambiarlo después.</div>
       </div>
 
-      {/* Resumen actual */}
       <div className="section section--note">
         <div className="note-row">🪪&nbsp;&nbsp;Nombre actual: “{initial?.nombre || "Nuevo cultivo"}”</div>
         <div className="note-row">🧪&nbsp;&nbsp;Tipo: {tipo}</div>
       </div>
 
-      {/* Fecha opcional */}
       <div className="section">
         <div className="section-title muted">Fecha de plantación</div>
         <input
